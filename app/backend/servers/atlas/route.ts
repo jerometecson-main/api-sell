@@ -132,26 +132,14 @@ export async function GET(req: NextRequest) {
     const episode = searchParams.get("d");
     const title = searchParams.get("f");
     const year = searchParams.get("g");
-    const ts = Number(searchParams.get("gago"));
-    const token = searchParams.get("putangnamo")!;
-    const f_token = searchParams.get("f_token")!;
+    // const ts = Number(searchParams.get("gago"));
+    // const token = searchParams.get("putangnamo")!;
+    // const f_token = searchParams.get("f_token")!;
 
-    if (!tmdbId || !mediaType || !title || !year || !ts || !token)
+    if (!tmdbId || !mediaType || !title || !year)
       return NextResponse.json(
         { success: false, error: "need token" },
         { status: 404 },
-      );
-
-    if (Date.now() - ts > 8000)
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
-      );
-
-    if (!validateBackendToken(tmdbId, f_token, ts, token))
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
       );
 
     const referer = req.headers.get("referer") || "";
