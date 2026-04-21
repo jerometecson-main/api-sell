@@ -3,7 +3,7 @@
 import { useState } from "react";
 import useSource from "./source";
 
-const SERVERS = ["icarus", "atlas", "orion", "lazarus", "talos", "daedalus"];
+const SERVERS = ["icarus", "atlas", "orion"];
 
 export default function SourcePlayer() {
   const [tmdbId, setTmdbId] = useState("238");
