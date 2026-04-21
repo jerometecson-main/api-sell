@@ -1,6 +1,4 @@
-import { ServerTypes } from "@/types/player-types";
-
-export const initialServers: ServerTypes[] = [
+export const initialServers = [
   {
     name: "Icarus I",
     server: "icarus",
