@@ -60,11 +60,28 @@ export async function GET(req: NextRequest) {
     const year = req.nextUrl.searchParams.get("g");
     const season = req.nextUrl.searchParams.get("s");
     const episode = req.nextUrl.searchParams.get("e");
+    const ts = Number(req.nextUrl.searchParams.get("gago"));
+    const token = req.nextUrl.searchParams.get("putangnamo")!;
+    const f_token = req.nextUrl.searchParams.get("f_token")!;
 
-    if (!tmdbId || !mediaType || !title || !year) {
+    if (!tmdbId || !mediaType || !title || !year || !ts || !token) {
       return NextResponse.json(
         { success: false, error: "need token" },
         { status: 404 },
+      );
+    }
+
+    if (Date.now() - Number(ts) > 8000) {
+      return NextResponse.json(
+        { success: false, error: "Invalid token" },
+        { status: 403 },
+      );
+    }
+
+    if (!validateBackendToken(tmdbId, f_token, ts, token)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid token" },
+        { status: 403 },
       );
     }
 
