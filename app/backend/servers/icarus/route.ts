@@ -1,7 +1,7 @@
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { NextRequest, NextResponse } from "next/server";
 import { validateBackendToken } from "@/lib/validate-token";
-import { isValidReferer } from "@/lib/allowed-referers";
+import { ALLOWED_ORIGINS, isValidReferer } from "@/lib/allowed-referers";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -73,8 +73,39 @@ export async function getWorkingProxy(url: string, proxies: string[]) {
   }
   return null;
 }
-
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get("origin") || "";
+  if (!ALLOWED_ORIGINS.includes(origin)) {
+    return new Response(null, { status: 403 });
+  }
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+}
 export async function GET(req: NextRequest) {
+  const origin = req.headers.get("origin") || "";
+
+  const cors = (res: NextResponse) => {
+    res.headers.set("Access-Control-Allow-Origin", origin);
+    res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.headers.set("Access-Control-Allow-Headers", "Content-Type");
+    return res;
+  };
+
+  if (!ALLOWED_ORIGINS.includes(origin)) {
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 },
+      ),
+    );
+  }
   try {
     const tmdbId = req.nextUrl.searchParams.get("a");
     const mediaType = req.nextUrl.searchParams.get("b");
@@ -87,31 +118,39 @@ export async function GET(req: NextRequest) {
     const f_token = req.nextUrl.searchParams.get("f_token")!;
 
     if (!tmdbId || !mediaType || !title || !year || !ts || !token) {
-      return NextResponse.json(
-        { success: false, error: "need token" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "need token" },
+          { status: 404 },
+        ),
       );
     }
 
     if (Date.now() - ts > 8000) {
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
     }
 
     if (!validateBackendToken(tmdbId, f_token, ts, token)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
     }
 
     const referer = req.headers.get("referer") || "";
     if (!isValidReferer(referer)) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 },
+        ),
       );
     }
 
@@ -167,9 +206,11 @@ export async function GET(req: NextRequest) {
       const results = searchJson?.data?.data || searchJson?.data || searchJson;
       const items = results?.items || [];
       if (!items.length)
-        return NextResponse.json(
-          { success: false, error: "No search results" },
-          { status: 404 },
+        return cors(
+          NextResponse.json(
+            { success: false, error: "No search results" },
+            { status: 404 },
+          ),
         );
 
       const selectedItem =
@@ -183,16 +224,20 @@ export async function GET(req: NextRequest) {
         );
 
       if (!selectedItem)
-        return NextResponse.json(
-          { success: false, error: "Unavailable" },
-          { status: 404 },
+        return cors(
+          NextResponse.json(
+            { success: false, error: "Unavailable" },
+            { status: 404 },
+          ),
         );
 
       const rawSubjectId = selectedItem?.subjectId;
       if (!rawSubjectId)
-        return NextResponse.json(
-          { success: false, error: "subjectId not found" },
-          { status: 404 },
+        return cors(
+          NextResponse.json(
+            { success: false, error: "subjectId not found" },
+            { status: 404 },
+          ),
         );
 
       subjectId = String(rawSubjectId);
@@ -248,9 +293,11 @@ export async function GET(req: NextRequest) {
     const sources = sourcesJson?.data?.data || sourcesJson?.data || sourcesJson;
     const downloads = sources?.downloads || [];
     if (!downloads.length)
-      return NextResponse.json(
-        { success: false, error: "No download sources" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No download sources" },
+          { status: 404 },
+        ),
       );
 
     const sortedDownloads = downloads
@@ -258,9 +305,11 @@ export async function GET(req: NextRequest) {
       .sort((a: any, b: any) => (b.resolution || 0) - (a.resolution || 0));
 
     if (!sortedDownloads.length)
-      return NextResponse.json(
-        { success: false, error: "No valid download URLs" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No valid download URLs" },
+          { status: 404 },
+        ),
       );
 
     const proxies = [
@@ -284,9 +333,11 @@ export async function GET(req: NextRequest) {
       shuffledProxies,
     );
     if (!workingProxy) {
-      return NextResponse.json(
-        { success: false, error: "No working proxy available" },
-        { status: 502 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No working proxy available" },
+          { status: 502 },
+        ),
       );
     }
 
@@ -304,16 +355,15 @@ export async function GET(req: NextRequest) {
       file: c.url,
     }));
 
-    return NextResponse.json({
-      success: true,
-      links,
-      subtitles,
-      meow: !!cached,
-    });
+    return cors(
+      NextResponse.json({ success: true, links, subtitles, meow: !!cached }),
+    );
   } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 },
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Internal server error" },
+        { status: 500 },
+      ),
     );
   }
 }
