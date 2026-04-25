@@ -3,6 +3,7 @@ import { validateBackendToken } from "@/lib/validate-token";
 import { createClient } from "@supabase/supabase-js";
 import { isValidReferer } from "@/lib/allowed-referers";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
+import { createCors, handleOptions } from "@/lib/cors";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -100,7 +101,10 @@ function selectBestFile(files: any[]) {
   );
 }
 
-function buildResponse(playerData: any) {
+function buildResponse(
+  playerData: any,
+  cors: (res: NextResponse) => NextResponse,
+) {
   const streams: Record<string, string> = playerData.streams ?? {};
 
   const links = QUALITY_ORDER.filter((q) => streams[q]).map((q) => ({
@@ -119,10 +123,22 @@ function buildResponse(playerData: any) {
       file: sub.url,
     }));
 
-  return NextResponse.json({ success: true, links, subtitles });
+  return cors(NextResponse.json({ success: true, links, subtitles }));
 }
-
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions(req);
+}
 export async function GET(req: NextRequest) {
+  const { cors, isAllowed } = createCors(req);
+
+  if (!isAllowed) {
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 },
+      ),
+    );
+  }
   try {
     const { searchParams } = req.nextUrl;
 
@@ -137,28 +153,36 @@ export async function GET(req: NextRequest) {
     const f_token = searchParams.get("f_token")!;
 
     if (!tmdbId || !mediaType || !title || !year || !ts || !token)
-      return NextResponse.json(
-        { success: false, error: "need token" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "need token" },
+          { status: 404 },
+        ),
       );
 
     if (Date.now() - ts > 8000)
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
 
     if (!validateBackendToken(tmdbId, f_token, ts, token))
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
 
     const referer = req.headers.get("referer") || "";
     if (!isValidReferer(referer)) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 },
+        ),
       );
     }
     const cached = await dbGet(tmdbId, mediaType, season, episode);
@@ -168,9 +192,11 @@ export async function GET(req: NextRequest) {
 
       const bestFile = selectBestFile(files);
       if (!bestFile)
-        return NextResponse.json(
-          { success: false, error: "No files found" },
-          { status: 404 },
+        return cors(
+          NextResponse.json(
+            { success: false, error: "No files found" },
+            { status: 404 },
+          ),
         );
 
       const playerData = await fetchWithTimeout(
@@ -179,7 +205,7 @@ export async function GET(req: NextRequest) {
         8000,
       ).then((r) => r.json());
       console.log("xxxxxxx", playerData);
-      return buildResponse(playerData);
+      return buildResponse(playerData, cors);
     }
 
     const qs = new URLSearchParams({
@@ -193,13 +219,15 @@ export async function GET(req: NextRequest) {
     const data = await fetchWithTimeout(`${WORKER_URL}/?${qs}`, {}, 8000).then(
       (r) => r.json(),
     );
-    if (!data.success) return NextResponse.json(data, { status: 500 });
+    if (!data.success) return cors(NextResponse.json(data, { status: 500 }));
 
     const { shareToken, files } = data;
     if (!files?.length)
-      return NextResponse.json(
-        { success: false, error: "No files found" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No files found" },
+          { status: 404 },
+        ),
       );
 
     const bestFile = selectBestFile(files);
@@ -214,12 +242,14 @@ export async function GET(req: NextRequest) {
       8000,
     ).then((r) => r.json());
 
-    return buildResponse(playerData);
+    return buildResponse(playerData, cors);
   } catch (err: any) {
     console.error("API Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 },
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Internal server error" },
+        { status: 500 },
+      ),
     );
   }
 }

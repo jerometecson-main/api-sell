@@ -1,8 +1,9 @@
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { NextRequest, NextResponse } from "next/server";
 import { validateBackendToken } from "@/lib/validate-token";
-import { ALLOWED_ORIGINS, isValidReferer } from "@/lib/allowed-referers";
+import { isValidReferer } from "@/lib/allowed-referers";
 import { createClient } from "@supabase/supabase-js";
+import { createCors, handleOptions } from "@/lib/cors";
 
 const supabase = createClient(
   process.env.SUPABASE_URL_MOVIEBOX!,
@@ -74,31 +75,12 @@ export async function getWorkingProxy(url: string, proxies: string[]) {
   return null;
 }
 export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get("origin") || "";
-  if (!ALLOWED_ORIGINS.includes(origin)) {
-    return new Response(null, { status: 403 });
-  }
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+  return handleOptions(req);
 }
 export async function GET(req: NextRequest) {
-  const origin = req.headers.get("origin") || "";
+  const { cors, isAllowed } = createCors(req);
 
-  const cors = (res: NextResponse) => {
-    res.headers.set("Access-Control-Allow-Origin", origin);
-    res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.headers.set("Access-Control-Allow-Headers", "Content-Type");
-    return res;
-  };
-
-  if (!ALLOWED_ORIGINS.includes(origin)) {
+  if (!isAllowed) {
     return cors(
       NextResponse.json(
         { success: false, error: "Forbidden" },
