@@ -1,5 +1,4 @@
 const ALLOWED_REFERERS = [
-  "/api/",
   "localhost",
   "http://192.168.1.2:3000/",
   "https://zxcprime.site/",
@@ -12,6 +11,7 @@ const ALLOWED_REFERERS = [
 
 export const ALLOWED_ORIGINS = [
   "http://localhost:3000",
+  "http://localhost:5173",
   "http://192.168.1.2:3000",
   "https://mnflix.com",
   "https://www.mnflix.com",
