@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateBackendToken } from "@/lib/validate-token";
 import { isValidReferer } from "@/lib/allowed-referers";
 import { createClient } from "@supabase/supabase-js";
+import { createCors, handleOptions } from "@/lib/cors";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_HOLLY_SUPABASE_URL_HOLLY!,
@@ -60,8 +61,20 @@ async function dbSave(
     console.warn("[holly dbSave] exception:", err.message);
   }
 }
-
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions(req);
+}
 export async function GET(req: NextRequest) {
+  const { cors, isAllowed } = createCors(req);
+
+  if (!isAllowed) {
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 },
+      ),
+    );
+  }
   try {
     const tmdbId = req.nextUrl.searchParams.get("a");
     const mediaType = req.nextUrl.searchParams.get("b");
@@ -74,31 +87,39 @@ export async function GET(req: NextRequest) {
     const f_token = req.nextUrl.searchParams.get("f_token")!;
 
     if (!tmdbId || !mediaType || !title || !year || !ts || !token) {
-      return NextResponse.json(
-        { success: false, error: "need token" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "need token" },
+          { status: 404 },
+        ),
       );
     }
 
     if (Date.now() - Number(ts) > 8000) {
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
     }
 
     if (!validateBackendToken(tmdbId, f_token, ts, token)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Invalid token" },
+          { status: 403 },
+        ),
       );
     }
 
     const referer = req.headers.get("referer") || "";
     if (!isValidReferer(referer)) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 },
+        ),
       );
     }
 
@@ -124,13 +145,15 @@ export async function GET(req: NextRequest) {
 
       const step1Res = await fetchWithTimeout(step1Url, {}, 6000);
       if (!step1Res.ok) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Holly step 1 failed",
-            status: step1Res.status,
-          },
-          { status: step1Res.status },
+        return cors(
+          NextResponse.json(
+            {
+              success: false,
+              error: "Holly step 1 failed",
+              status: step1Res.status,
+            },
+            { status: step1Res.status },
+          ),
         );
       }
 
@@ -138,9 +161,11 @@ export async function GET(req: NextRequest) {
       qualities = step1Data.qualities ?? [];
 
       if (!qualities.length) {
-        return NextResponse.json(
-          { success: false, error: "No qualities found from Holly" },
-          { status: 404 },
+        return cors(
+          NextResponse.json(
+            { success: false, error: "No qualities found from Holly" },
+            { status: 404 },
+          ),
         );
       }
 
@@ -162,13 +187,15 @@ export async function GET(req: NextRequest) {
 
     const step2Res = await fetchWithTimeout(step2Url, {}, 6000);
     if (!step2Res.ok) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Holly step 2 failed",
-          status: step2Res.status,
-        },
-        { status: step2Res.status },
+      return cors(
+        NextResponse.json(
+          {
+            success: false,
+            error: "Holly step 2 failed",
+            status: step2Res.status,
+          },
+          { status: step2Res.status },
+        ),
       );
     }
 
@@ -177,9 +204,11 @@ export async function GET(req: NextRequest) {
       step2Data.sources ?? [];
 
     if (!sources.length) {
-      return NextResponse.json(
-        { success: false, error: "No sources from Holly step 2" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No sources from Holly step 2" },
+          { status: 404 },
+        ),
       );
     }
 
@@ -189,9 +218,11 @@ export async function GET(req: NextRequest) {
       sources.find((s) => s.type === "hls");
 
     if (!hlsSource) {
-      return NextResponse.json(
-        { success: false, error: "No usable source found" },
-        { status: 404 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "No usable source found" },
+          { status: 404 },
+        ),
       );
     }
 
@@ -205,28 +236,34 @@ export async function GET(req: NextRequest) {
     ).catch(() => null);
 
     if (!proxyCheck?.ok) {
-      return NextResponse.json(
-        { success: false, error: "Holly proxy check failed" },
-        { status: 502 },
+      return cors(
+        NextResponse.json(
+          { success: false, error: "Holly proxy check failed" },
+          { status: 502 },
+        ),
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      c: !!cached,
-      links: [
-        {
-          type: hlsSource.type === "hls" ? "hls" : "mp4",
-          link: proxiedUrl,
-        },
-      ],
-      subtitles: [],
-    });
+    return cors(
+      NextResponse.json({
+        success: true,
+        c: !!cached,
+        links: [
+          {
+            type: hlsSource.type === "hls" ? "hls" : "mp4",
+            link: proxiedUrl,
+          },
+        ],
+        subtitles: [],
+      }),
+    );
   } catch (err) {
     console.error("Holly route error:", err);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 },
+    return cors(
+      NextResponse.json(
+        { success: false, error: "Internal server error" },
+        { status: 500 },
+      ),
     );
   }
 }
