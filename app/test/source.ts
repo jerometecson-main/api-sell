@@ -108,7 +108,11 @@ export default function useSource(params: UseSourceParams): UseSourceResult {
 }
 
 async function fetchBackendToken(id: string, f_token: string, ts: number) {
-  const res = await axios.post("/backend/token", { idd: id, f_token, ts });
+  const res = await axios.post("https://zxcprime.site/backend/token", {
+    idd: id,
+    f_token,
+    ts,
+  });
   return res.data;
 }
 
@@ -158,7 +162,7 @@ function buildSourceURL({
     params.append("e", imdbId);
   }
 
-  return `/backend/servers/${server}?${params.toString()}`;
+  return `https://zxcprime.site/backend/servers/${server}?${params.toString()}`;
 }
 
 export function generateFrontendToken(id: string) {
