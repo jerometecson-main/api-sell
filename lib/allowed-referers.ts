@@ -9,6 +9,7 @@ const ALLOWED_REFERERS = [
   "https://www.zxcstream.xyz/",
   "https://ridomovies.co/",
   "https://www.ridomovies.co/",
+  "https://5.161.93.9/",
 ];
 
 export const ALLOWED_ORIGINS = [
@@ -23,6 +24,7 @@ export const ALLOWED_ORIGINS = [
   "https://www.zxcstream.xyz",
   "https://www.ridomovies.co",
   "https://ridomovies.co",
+  "https://5.161.93.9",
 ];
 
 export function isValidReferer(referer: string): boolean {
