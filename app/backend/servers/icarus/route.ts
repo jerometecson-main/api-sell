@@ -170,7 +170,7 @@ export async function GET(req: NextRequest) {
     } else {
       // Search
       const searchRes = await fetchWithTimeout(
-        `${baseUrl}/wefeed-h5-bff/web/subject/search`,
+      `https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search`,
         {
           method: "POST",
           headers: { ...headers, "Content-Type": "application/json" },
