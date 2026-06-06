@@ -1,3 +1,260 @@
+// import { NextRequest, NextResponse } from "next/server";
+// import { validateBackendToken } from "@/lib/validate-token";
+// import { createClient } from "@supabase/supabase-js";
+// import { isValidReferer } from "@/lib/allowed-referers";
+// import { fetchWithTimeout } from "@/lib/fetch-timeout";
+// import { createCors, handleOptions } from "@/lib/cors";
+
+// const supabase = createClient(
+//   process.env.NEXT_PUBLIC_SUPABASE_URL!,
+//   process.env.SUPABASE_SERVICE_ROLE_KEY!,
+// );
+
+// const WORKER_URL = "https://main.jinluxuz.workers.dev";
+// const WORKER_SECRET = "xk92mZpQ7vLw3nRt";
+// const FEBBOX_PLAYER_WORKER = "https://febbox3.jinluxusz.workers.dev";
+// const MAX_FILE_SIZE_GB = 60;
+// const QUALITY_ORDER = ["1080p", "auto", "4k", "720p", "480p", "360p"];
+
+// async function dbGet(
+//   tmdbId: string,
+//   mediaType: string,
+//   season: string | null,
+//   episode: string | null,
+// ) {
+//   try {
+//     let query = supabase
+//       .from("meta")
+//       .select("id, streams(id, share_token, stream_files(*))")
+//       .eq("tmdb_id", Number(tmdbId))
+//       .eq("media_type", mediaType);
+
+//     if (season) query = query.eq("season", Number(season));
+//     else query = query.is("season", null);
+
+//     if (episode) query = query.eq("episode", Number(episode));
+//     else query = query.is("episode", null);
+
+//     const { data, error } = await query.maybeSingle();
+//     if (error || !data) return null;
+
+//     const stream = (data.streams as any[])?.[0];
+//     if (!stream) return null;
+
+//     return {
+//       share_token: stream.share_token,
+//       files: stream.stream_files ?? [],
+//     };
+//   } catch {
+//     return null;
+//   }
+// }
+
+// async function dbSave(
+//   tmdbId: string,
+//   mediaType: string,
+//   season: string | null,
+//   episode: string | null,
+//   year: string,
+//   shareToken: string,
+//   files: any[],
+// ) {
+//   try {
+//     const { error } = await supabase.rpc("save_stream", {
+//       p_tmdb_id: Number(tmdbId),
+//       p_media_type: mediaType,
+//       p_season: season ? Number(season) : null,
+//       p_episode: episode ? Number(episode) : null,
+//       p_year: Number(year),
+//       p_share_token: shareToken,
+//       p_files: files,
+//     });
+//     if (error) console.warn("[dbSave] error:", error);
+//   } catch (err: any) {
+//     console.warn("[dbSave] exception:", err.message);
+//   }
+// }
+
+// function parseFileSizeGB(sizeStr: string): number {
+//   if (!sizeStr) return 0;
+//   const match = sizeStr.match(/([\d.]+)\s*(GB|MB)/i);
+//   if (!match) return 0;
+//   const val = parseFloat(match[1]);
+//   return match[2].toUpperCase() === "GB" ? val : val / 1024;
+// }
+
+// function selectBestFile(files: any[]) {
+//   const qualify = (f: any) =>
+//     parseFileSizeGB(f.file_size) <= MAX_FILE_SIZE_GB &&
+//     f.source !== "CAM" &&
+//     !f.file_name?.toUpperCase().includes("CAM");
+
+//   const sorted = [...files].sort(
+//     (a, b) => parseFileSizeGB(a.file_size) - parseFileSizeGB(b.file_size),
+//   );
+
+//   return (
+//     sorted.find((f) => qualify(f) && f.quality === "4K") ??
+//     sorted.find((f) => qualify(f) && f.quality === "1080p") ??
+//     sorted.find((f) => qualify(f)) ??
+//     files[0]
+//   );
+// }
+
+// function buildResponse(
+//   playerData: any,
+//   cors: (res: NextResponse) => NextResponse,
+// ) {
+//   const streams: Record<string, string> = playerData.streams ?? {};
+
+//   const links = QUALITY_ORDER.filter((q) => streams[q]).map((q) => ({
+//     type: "hls" as const,
+//     link: streams[q],
+//     resolution: parseInt(q),
+//   }));
+
+//   const byLanguage: Record<string, any[]> =
+//     playerData.subtitles?.by_language ?? {};
+//   const subtitles = Object.values(byLanguage)
+//     .flat()
+//     .map((sub: any) => ({
+//       id: sub.sid,
+//       display: sub.language,
+//       file: sub.url,
+//     }));
+
+//   return cors(NextResponse.json({ success: true, links, subtitles }));
+// }
+// export async function OPTIONS(req: NextRequest) {
+//   return handleOptions(req);
+// }
+// export async function GET(req: NextRequest) {
+//   const { cors, isAllowed } = createCors(req);
+
+//   if (!isAllowed) {
+//     return cors(
+//       NextResponse.json(
+//         { success: false, error: "Forbidden" },
+//         { status: 403 },
+//       ),
+//     );
+//   }
+//   try {
+//     const { searchParams } = req.nextUrl;
+
+//     const tmdbId = searchParams.get("a");
+//     const mediaType = searchParams.get("b");
+//     const season = searchParams.get("c");
+//     const episode = searchParams.get("d");
+//     const title = searchParams.get("f");
+//     const year = searchParams.get("g");
+//     const ts = Number(searchParams.get("gago"));
+//     const token = searchParams.get("putangnamo")!;
+//     const f_token = searchParams.get("f_token")!;
+
+//     if (!tmdbId || !mediaType || !title || !year || !ts || !token)
+//       return cors(
+//         NextResponse.json(
+//           { success: false, error: "need token" },
+//           { status: 404 },
+//         ),
+//       );
+
+//     if (Date.now() - ts > 8000)
+//       return cors(
+//         NextResponse.json(
+//           { success: false, error: "Invalid token" },
+//           { status: 403 },
+//         ),
+//       );
+
+//     if (!validateBackendToken(tmdbId, f_token, ts, token))
+//       return cors(
+//         NextResponse.json(
+//           { success: false, error: "Invalid token" },
+//           { status: 403 },
+//         ),
+//       );
+
+//     const referer = req.headers.get("referer") || "";
+//     if (!isValidReferer(referer)) {
+//       return cors(
+//         NextResponse.json(
+//           { success: false, error: "Forbidden" },
+//           { status: 403 },
+//         ),
+//       );
+//     }
+//     const cached = await dbGet(tmdbId, mediaType, season, episode);
+
+//     if (cached) {
+//       const { share_token: shareToken, files } = cached;
+
+//       const bestFile = selectBestFile(files);
+//       if (!bestFile)
+//         return cors(
+//           NextResponse.json(
+//             { success: false, error: "No files found" },
+//             { status: 404 },
+//           ),
+//         );
+
+//       const playerData = await fetchWithTimeout(
+//         `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
+//         {},
+//         8000,
+//       ).then((r) => r.json());
+//       console.log("xxxxxxx", playerData);
+//       return buildResponse(playerData, cors);
+//     }
+
+//     const qs = new URLSearchParams({
+//       secret: WORKER_SECRET,
+//       title,
+//       year,
+//       mediaType,
+//       ...(season && { season }),
+//       ...(episode && { episode }),
+//     });
+//     const data = await fetchWithTimeout(`${WORKER_URL}/?${qs}`, {}, 8000).then(
+//       (r) => r.json(),
+//     );
+//     if (!data.success) return cors(NextResponse.json(data, { status: 500 }));
+
+//     const { shareToken, files } = data;
+//     if (!files?.length)
+//       return cors(
+//         NextResponse.json(
+//           { success: false, error: "No files found" },
+//           { status: 404 },
+//         ),
+//       );
+
+//     const bestFile = selectBestFile(files);
+
+//     dbSave(tmdbId, mediaType, season, episode, year, shareToken, files).catch(
+//       (e: any) => console.warn("dbSave failed:", e.message),
+//     );
+
+//     const playerData = await fetchWithTimeout(
+//       `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
+//       {},
+//       8000,
+//     ).then((r) => r.json());
+
+//     return buildResponse(playerData, cors);
+//   } catch (err: any) {
+//     console.error("API Error:", err);
+//     return cors(
+//       NextResponse.json(
+//         { success: false, error: "Internal server error" },
+//         { status: 500 },
+//       ),
+//     );
+//   }
+// }
+
+
 import { NextRequest, NextResponse } from "next/server";
 import { validateBackendToken } from "@/lib/validate-token";
 import { createClient } from "@supabase/supabase-js";
@@ -10,124 +267,98 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-const WORKER_URL = "https://main.jinluxuz.workers.dev";
-const WORKER_SECRET = "xk92mZpQ7vLw3nRt";
-const FEBBOX_PLAYER_WORKER = "https://febbox3.jinluxusz.workers.dev";
-const MAX_FILE_SIZE_GB = 60;
-const QUALITY_ORDER = ["1080p", "auto", "4k", "720p", "480p", "360p"];
+const ENC_DEC_API = "https://enc-dec.app/api";
+const SNOWHOUSE_BASE = "https://snowhouse.lordflix.club";
+const LORDFLIX_SERVER = "Phoenix";
+const LORDFLIX_HEADERS = {
+  Accept: "*/*",
+  Origin: "https://lordflix.org",
+  Referer: "https://lordflix.org/",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+};
 
-async function dbGet(
-  tmdbId: string,
-  mediaType: string,
-  season: string | null,
-  episode: string | null,
-) {
-  try {
-    let query = supabase
-      .from("meta")
-      .select("id, streams(id, share_token, stream_files(*))")
-      .eq("tmdb_id", Number(tmdbId))
-      .eq("media_type", mediaType);
-
-    if (season) query = query.eq("season", Number(season));
-    else query = query.is("season", null);
-
-    if (episode) query = query.eq("episode", Number(episode));
-    else query = query.is("episode", null);
-
-    const { data, error } = await query.maybeSingle();
-    if (error || !data) return null;
-
-    const stream = (data.streams as any[])?.[0];
-    if (!stream) return null;
-
-    return {
-      share_token: stream.share_token,
-      files: stream.stream_files ?? [],
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function dbSave(
-  tmdbId: string,
-  mediaType: string,
-  season: string | null,
-  episode: string | null,
+async function fetchLordflixStreams(
+  title: string,
   year: string,
-  shareToken: string,
-  files: any[],
-) {
-  try {
-    const { error } = await supabase.rpc("save_stream", {
-      p_tmdb_id: Number(tmdbId),
-      p_media_type: mediaType,
-      p_season: season ? Number(season) : null,
-      p_episode: episode ? Number(episode) : null,
-      p_year: Number(year),
-      p_share_token: shareToken,
-      p_files: files,
-    });
-    if (error) console.warn("[dbSave] error:", error);
-  } catch (err: any) {
-    console.warn("[dbSave] exception:", err.message);
-  }
-}
+  tmdbId: string,
+  imdbId: string | null,
+  mediaType: string,
+  season: string | null,
+  episode: string | null,
+): Promise<{ links: any[]; subtitles: any[] }> {
+  const params = new URLSearchParams({
+    title,
+    type: mediaType === "movie" ? "movie" : "series",
+    year,
+    tmdb: tmdbId,
+    server: LORDFLIX_SERVER,
+    ...(imdbId && { imdb: imdbId }),
+    ...(season && { season }),
+    ...(episode && { episode }),
+  });
 
-function parseFileSizeGB(sizeStr: string): number {
-  if (!sizeStr) return 0;
-  const match = sizeStr.match(/([\d.]+)\s*(GB|MB)/i);
-  if (!match) return 0;
-  const val = parseFloat(match[1]);
-  return match[2].toUpperCase() === "GB" ? val : val / 1024;
-}
+  const encData = await fetchWithTimeout(
+    `${ENC_DEC_API}/enc-lordflix?url=${encodeURIComponent(`${SNOWHOUSE_BASE}/?${params}`)}`,
+    {},
+    8000,
+  ).then((r) => r.json());
 
-function selectBestFile(files: any[]) {
-  const qualify = (f: any) =>
-    parseFileSizeGB(f.file_size) <= MAX_FILE_SIZE_GB &&
-    f.source !== "CAM" &&
-    !f.file_name?.toUpperCase().includes("CAM");
+  if (encData.status !== 200 || !encData.result?.url)
+    throw new Error(`enc-lordflix failed: ${encData.error ?? "unknown"}`);
 
-  const sorted = [...files].sort(
-    (a, b) => parseFileSizeGB(a.file_size) - parseFileSizeGB(b.file_size),
-  );
+  const { url: encUrl, sign } = encData.result;
 
-  return (
-    sorted.find((f) => qualify(f) && f.quality === "4K") ??
-    sorted.find((f) => qualify(f) && f.quality === "1080p") ??
-    sorted.find((f) => qualify(f)) ??
-    files[0]
-  );
-}
+  const encryptedText = await fetchWithTimeout(
+    encUrl,
+    { headers: LORDFLIX_HEADERS },
+    20000,
+  ).then((r) => r.text());
 
-function buildResponse(
-  playerData: any,
-  cors: (res: NextResponse) => NextResponse,
-) {
-  const streams: Record<string, string> = playerData.streams ?? {};
+  const decData = await fetchWithTimeout(
+    `${ENC_DEC_API}/dec-lordflix`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: encryptedText, sign }),
+    },
+    15000,
+  ).then((r) => r.json());
 
-  const links = QUALITY_ORDER.filter((q) => streams[q]).map((q) => ({
+  if (decData.status !== 200 || !decData.result)
+    throw new Error(`dec-lordflix failed: ${decData.error ?? "unknown"}`);
+
+  const result = decData.result;
+  const sources: any[] =
+    result.stream ?? result.sources ?? result.streams ?? [];
+
+  const links = sources.map((s: any) => ({
     type: "hls" as const,
-    link: streams[q],
-    resolution: parseInt(q),
+    link: s.playlist ?? s.url ?? s.file ?? s.link,
+    resolution: parseInt(s.quality ?? s.label ?? "0") || 0,
   }));
 
-  const byLanguage: Record<string, any[]> =
-    playerData.subtitles?.by_language ?? {};
-  const subtitles = Object.values(byLanguage)
-    .flat()
-    .map((sub: any) => ({
-      id: sub.sid,
-      display: sub.language,
-      file: sub.url,
+  const rawSubs: any[] =
+    result.captions ??
+    result.subtitles ??
+    result.tracks ??
+    sources.flatMap((s: any) => s.captions ?? []);
+
+  const subtitles = rawSubs
+    .filter((s: any) => s.kind !== "thumbnails")
+    .map((s: any) => ({
+      id: s.id ?? s.sid,
+      display: s.label ?? s.language,
+      file: s.file ?? s.url,
     }));
 
-  return cors(NextResponse.json({ success: true, links, subtitles }));
+  return { links, subtitles };
 }
+
 export async function OPTIONS(req: NextRequest) {
   return handleOptions(req);
 }
+
 export async function GET(req: NextRequest) {
   const { cors, isAllowed } = createCors(req);
 
@@ -139,6 +370,7 @@ export async function GET(req: NextRequest) {
       ),
     );
   }
+
   try {
     const { searchParams } = req.nextUrl;
 
@@ -148,6 +380,7 @@ export async function GET(req: NextRequest) {
     const episode = searchParams.get("d");
     const title = searchParams.get("f");
     const year = searchParams.get("g");
+    const imdbId = searchParams.get("imdb");
     const ts = Number(searchParams.get("gago"));
     const token = searchParams.get("putangnamo")!;
     const f_token = searchParams.get("f_token")!;
@@ -185,64 +418,26 @@ export async function GET(req: NextRequest) {
         ),
       );
     }
-    const cached = await dbGet(tmdbId, mediaType, season, episode);
 
-    if (cached) {
-      const { share_token: shareToken, files } = cached;
-
-      const bestFile = selectBestFile(files);
-      if (!bestFile)
-        return cors(
-          NextResponse.json(
-            { success: false, error: "No files found" },
-            { status: 404 },
-          ),
-        );
-
-      const playerData = await fetchWithTimeout(
-        `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
-        {},
-        8000,
-      ).then((r) => r.json());
-      console.log("xxxxxxx", playerData);
-      return buildResponse(playerData, cors);
-    }
-
-    const qs = new URLSearchParams({
-      secret: WORKER_SECRET,
+    const { links, subtitles } = await fetchLordflixStreams(
       title,
       year,
+      tmdbId,
+      imdbId,
       mediaType,
-      ...(season && { season }),
-      ...(episode && { episode }),
-    });
-    const data = await fetchWithTimeout(`${WORKER_URL}/?${qs}`, {}, 8000).then(
-      (r) => r.json(),
+      season,
+      episode,
     );
-    if (!data.success) return cors(NextResponse.json(data, { status: 500 }));
 
-    const { shareToken, files } = data;
-    if (!files?.length)
+    if (!links.length)
       return cors(
         NextResponse.json(
-          { success: false, error: "No files found" },
+          { success: false, error: "No streams found" },
           { status: 404 },
         ),
       );
 
-    const bestFile = selectBestFile(files);
-
-    dbSave(tmdbId, mediaType, season, episode, year, shareToken, files).catch(
-      (e: any) => console.warn("dbSave failed:", e.message),
-    );
-
-    const playerData = await fetchWithTimeout(
-      `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
-      {},
-      8000,
-    ).then((r) => r.json());
-
-    return buildResponse(playerData, cors);
+    return cors(NextResponse.json({ success: true, links, subtitles }));
   } catch (err: any) {
     console.error("API Error:", err);
     return cors(
