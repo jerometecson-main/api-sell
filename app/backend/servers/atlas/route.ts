@@ -12,10 +12,10 @@ const supabase = createClient(
 
 const WORKER_URL = "https://main.jinluxuz.workers.dev";
 const WORKER_SECRET = "xk92mZpQ7vLw3nRt";
-const FEBBOX_PLAYER_WORKER = "https://febbox3.jinluxusz.workers.dev";
+const FEBBOX_PLAYER_WORKER = "https://proxy.jerometecson0.workers.dev";
 const MAX_FILE_SIZE_GB = 60;
-const QUALITY_ORDER = [ "360p","auto",];
-// const QUALITY_ORDER = [ "360p","auto","1080p",  "4k", "720p", "480p",];
+const QUALITY_ORDER = ["360p", "auto"];
+
 async function dbGet(
   tmdbId: string,
   mediaType: string,
@@ -120,6 +120,11 @@ function buildResponse(playerData: any) {
 
   return NextResponse.json({ success: true, links, subtitles });
 }
+
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions(req);
+}
+
 export async function GET(req: NextRequest) {
   const { cors, isAllowed } = createCors(req);
 
@@ -131,6 +136,7 @@ export async function GET(req: NextRequest) {
       ),
     );
   }
+
   try {
     const { searchParams } = req.nextUrl;
 
@@ -140,6 +146,7 @@ export async function GET(req: NextRequest) {
     const episode = searchParams.get("d");
     const title = searchParams.get("f");
     const year = searchParams.get("g");
+    const imdbId = searchParams.get("imdb");
     const ts = Number(searchParams.get("gago"));
     const token = searchParams.get("putangnamo")!;
     const f_token = searchParams.get("f_token")!;
@@ -177,11 +184,11 @@ export async function GET(req: NextRequest) {
         ),
       );
     }
+
     const cached = await dbGet(tmdbId, mediaType, season, episode);
 
     if (cached) {
       const { share_token: shareToken, files } = cached;
-
       const bestFile = selectBestFile(files);
       if (!bestFile)
         return cors(
@@ -196,8 +203,8 @@ export async function GET(req: NextRequest) {
         {},
         8000,
       ).then((r) => r.json());
-      console.log("xxxxxxx", playerData);
-      return buildResponse(playerData, cors);
+
+      return cors(buildResponse(playerData));
     }
 
     const qs = new URLSearchParams({
@@ -208,10 +215,13 @@ export async function GET(req: NextRequest) {
       ...(season && { season }),
       ...(episode && { episode }),
     });
+
     const data = await fetchWithTimeout(`${WORKER_URL}/?${qs}`, {}, 8000).then(
       (r) => r.json(),
     );
-    if (!data.success) return cors(NextResponse.json(data, { status: 500 }));
+
+    if (!data.success)
+      return cors(NextResponse.json(data, { status: 500 }));
 
     const { shareToken, files } = data;
     if (!files?.length)
@@ -234,7 +244,7 @@ export async function GET(req: NextRequest) {
       8000,
     ).then((r) => r.json());
 
-    return buildResponse(playerData, cors);
+    return cors(buildResponse(playerData));
   } catch (err: any) {
     console.error("API Error:", err);
     return cors(
@@ -245,7 +255,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
 
 // import { NextRequest, NextResponse } from "next/server";
 // import { validateBackendToken } from "@/lib/validate-token";
