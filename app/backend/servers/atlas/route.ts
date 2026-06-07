@@ -6,8 +6,8 @@ import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { createCors, handleOptions } from "@/lib/cors";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  process.env.SUPABASE_URL_ATLAS!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY_ATLAS!,
 );
 
 const WORKER_URL = "https://main.jinluxuz.workers.dev";
@@ -24,8 +24,8 @@ async function dbGet(
 ) {
   try {
     let query = supabase
-      .from("meta")
-      .select("id, streams(id, share_token, stream_files(*))")
+      .from("streams")
+      .select("share_token, files")
       .eq("tmdb_id", Number(tmdbId))
       .eq("media_type", mediaType);
 
@@ -38,12 +38,9 @@ async function dbGet(
     const { data, error } = await query.maybeSingle();
     if (error || !data) return null;
 
-    const stream = (data.streams as any[])?.[0];
-    if (!stream) return null;
-
     return {
-      share_token: stream.share_token,
-      files: stream.stream_files ?? [],
+      share_token: data.share_token,
+      files: data.files ?? [],
     };
   } catch {
     return null;
@@ -60,15 +57,16 @@ async function dbSave(
   files: any[],
 ) {
   try {
-    const { error } = await supabase.rpc("save_stream", {
-      p_tmdb_id: Number(tmdbId),
-      p_media_type: mediaType,
-      p_season: season ? Number(season) : null,
-      p_episode: episode ? Number(episode) : null,
-      p_year: Number(year),
-      p_share_token: shareToken,
-      p_files: files,
+    const { error } = await supabase.from("streams").insert({
+      tmdb_id: Number(tmdbId),
+      media_type: mediaType,
+      season: season ? Number(season) : null,
+      episode: episode ? Number(episode) : null,
+      year: Number(year),
+      share_token: shareToken,
+      files,
     });
+
     if (error) console.warn("[dbSave] error:", error);
   } catch (err: any) {
     console.warn("[dbSave] exception:", err.message);
@@ -101,10 +99,7 @@ function selectBestFile(files: any[]) {
   );
 }
 
-function buildResponse(
-  playerData: any,
-  cors: (res: NextResponse) => NextResponse,
-) {
+function buildResponse(playerData: any) {
   const streams: Record<string, string> = playerData.streams ?? {};
 
   const links = QUALITY_ORDER.filter((q) => streams[q]).map((q) => ({
@@ -123,10 +118,7 @@ function buildResponse(
       file: sub.url,
     }));
 
-  return cors(NextResponse.json({ success: true, links, subtitles }));
-}
-export async function OPTIONS(req: NextRequest) {
-  return handleOptions(req);
+  return NextResponse.json({ success: true, links, subtitles });
 }
 export async function GET(req: NextRequest) {
   const { cors, isAllowed } = createCors(req);
