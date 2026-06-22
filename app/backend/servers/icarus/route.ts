@@ -430,9 +430,8 @@ export async function GET(req: NextRequest) {
     const f_token = req.nextUrl.searchParams.get("f_token")!;
     const dubCode = req.nextUrl.searchParams.get("dubCode");
     const dubType = req.nextUrl.searchParams.get("dubType");
-    const date = req.nextUrl.searchParams.get("date");
 
-    if (!tmdbId || !mediaType || !title || !date || !ts || !token) {
+    if (!tmdbId || !mediaType || !title || !ts || !token) {
       logRequest(404, "missing params");
       return cors(
         NextResponse.json({ success: false, error: "need token" }, { status: 404 }),
@@ -522,19 +521,10 @@ export async function GET(req: NextRequest) {
       const LANG_TAGS =
         /\[(tagalog|hindi|dubbed|multi|spanish|french|arabic|korean|japanese|tamil|telugu)\]/i;
       const queryWords = normalizedTitle!.split(/\s+/).filter(Boolean);
-      const dateObj = date ? new Date(date) : null;
 
       let selectedItem = items.find((item: any) => {
         const itemTitle = item.title?.toLowerCase().replace(/-/g, " ") || "";
-        const itemReleaseDate = item.releaseDate;
         if (LANG_TAGS.test(itemTitle)) return false;
-        if (!dateObj || !itemReleaseDate) return false;
-        const itemDate = new Date(itemReleaseDate);
-        const diff =
-          itemDate.getFullYear() * 12 +
-          itemDate.getMonth() -
-          (dateObj.getFullYear() * 12 + dateObj.getMonth());
-        if (Math.abs(diff) > 1) return false;
         const itemTitleClean = itemTitle.replace(/\bs\d+(-s\d+)?\b/gi, "").trim();
         const itemWordsClean = itemTitleClean.split(/\s+/).filter(Boolean);
         if (queryWords.length <= 2 && itemWordsClean.length !== queryWords.length) return false;
@@ -545,14 +535,6 @@ export async function GET(req: NextRequest) {
       if (!selectedItem) {
         selectedItem = items.find((item: any) => {
           const itemTitle = item.title?.toLowerCase().replace(/-/g, " ") || "";
-          const itemReleaseDate = item.releaseDate;
-          if (!dateObj || !itemReleaseDate) return false;
-          const itemDate = new Date(itemReleaseDate);
-          const diff =
-            itemDate.getFullYear() * 12 +
-            itemDate.getMonth() -
-            (dateObj.getFullYear() * 12 + dateObj.getMonth());
-          if (Math.abs(diff) > 1) return false;
           const itemTitleClean = itemTitle.replace(/\bs\d+(-s\d+)?\b/gi, "").trim();
           const itemWordsClean = itemTitleClean.split(/\s+/).filter(Boolean);
           if (queryWords.length <= 2 && itemWordsClean.length !== queryWords.length) return false;
@@ -611,7 +593,6 @@ export async function GET(req: NextRequest) {
             tmdb_id: tmdbId,
             media_type: mediaType,
             dubs,
-            release_date: date,
             title,
           },
           { onConflict: "tmdb_id,media_type", ignoreDuplicates: true },
@@ -767,24 +748,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (!cachedDownloads) {
-      await supabase.from("moviebox_downloads_cache").upsert(
-        {
-          tmdb_id: tmdbId,
-          media_type: mediaType,
-          season: season ?? "",
-          episode: episode ?? "",
-          dub: activeDubLang,
-          type: activeDubType,
-          downloads: sortedDownloads,
-          subtitles,
-          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 45).toISOString(),
-        },
-        {
-          onConflict: "tmdb_id,media_type,season,episode,dub,type",
-        },
-      );
-    }
+  
 
     const links = sortedDownloads.map((d: any) => ({
       resolution: d.resolution,
