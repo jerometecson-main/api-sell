@@ -1,260 +1,161 @@
-// import { NextRequest, NextResponse } from "next/server";
-// import { validateBackendToken } from "@/lib/validate-token";
-// import { createClient } from "@supabase/supabase-js";
-// import { isValidReferer } from "@/lib/allowed-referers";
-// import { fetchWithTimeout } from "@/lib/fetch-timeout";
-// import { createCors, handleOptions } from "@/lib/cors";
+import { NextRequest, NextResponse } from "next/server";
+import { validateBackendToken } from "@/lib/validate-token";
+import { isValidReferer } from "@/lib/allowed-referers";
+import { fetchWithTimeout } from "@/lib/fetch-timeout";
 
-// const supabase = createClient(
-//   process.env.SUPABASE_URL_ATLAS!,
-//   process.env.SUPABASE_SERVICE_ROLE_KEY_ATLAS!,
-// );
+const PROXY_WORKERS = [
+  // "https://proxy.jerometecson-main.workers.dev",
+  "https://berkas.test01-05a.workers.dev/",
+  "https://berkas.test02-663.workers.dev/",
+  "https://berkas.test03-4fb.workers.dev/",
+  "https://berkas.test04-cee.workers.dev/",
+];
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+async function getHealthyWorker(testUrl: string): Promise<string | null> {
+  const candidates = shuffle(PROXY_WORKERS);
 
-// const WORKER_URL = "https://main.jinluxuz.workers.dev";
-// const WORKER_SECRET = "xk92mZpQ7vLw3nRt";
-// const FEBBOX_PLAYER_WORKER = "https://proxy.jerometecson0.workers.dev";
-// const MAX_FILE_SIZE_GB = 60;
-// const QUALITY_ORDER = ["360p", "auto"];
+  for (const worker of candidates) {
+    try {
+      const testLink = `${worker}/?url=${testUrl}`;
+      const res = await fetchWithTimeout(testLink, { method: "HEAD" }, 3000);
 
-// async function dbGet(
-//   tmdbId: string,
-//   mediaType: string,
-//   season: string | null,
-//   episode: string | null,
-// ) {
-//   try {
-//     let query = supabase
-//       .from("streams")
-//       .select("share_token, files")
-//       .eq("tmdb_id", Number(tmdbId))
-//       .eq("media_type", mediaType);
+      if (res.ok) {
+        return worker;
+      }
+    } catch {}
+  }
 
-//     if (season) query = query.eq("season", Number(season));
-//     else query = query.is("season", null);
+  return null;
+}
 
-//     if (episode) query = query.eq("episode", Number(episode));
-//     else query = query.is("episode", null);
+const STREAMDATA_URL = "https://streamdata.vaplayer.ru/api.php";
 
-//     const { data, error } = await query.maybeSingle();
-//     if (error || !data) return null;
+export async function GET(req: NextRequest) {
+  const logRequest = (status: number, reason: string) => {
+    const tmdbId = req.nextUrl.searchParams.get("a");
+    const mediaType = req.nextUrl.searchParams.get("b");
+    const season = req.nextUrl.searchParams.get("c");
+    const episode = req.nextUrl.searchParams.get("d");
+    const extra = mediaType === "tv" ? `/${season}/${episode}` : "";
+    console.log(
+      `[BERKAS] ${tmdbId}/${mediaType}${extra} | ${status} | ${reason}`,
+    );
+  };
 
-//     return {
-//       share_token: data.share_token,
-//       files: data.files ?? [],
-//     };
-//   } catch {
-//     return null;
-//   }
-// }
+  try {
+    const tmdbId = req.nextUrl.searchParams.get("a");
+    const mediaType = req.nextUrl.searchParams.get("b");
+    const season = req.nextUrl.searchParams.get("c");
+    const episode = req.nextUrl.searchParams.get("d");
+    const title = req.nextUrl.searchParams.get("f");
+    const year = req.nextUrl.searchParams.get("g");
+    const imdbId = req.nextUrl.searchParams.get("imdb"); // optional
+    const ts = Number(req.nextUrl.searchParams.get("gago"));
+    const token = req.nextUrl.searchParams.get("putangnamo")!;
+    const f_token = req.nextUrl.searchParams.get("f_token")!;
 
-// async function dbSave(
-//   tmdbId: string,
-//   mediaType: string,
-//   season: string | null,
-//   episode: string | null,
-//   year: string,
-//   shareToken: string,
-//   files: any[],
-// ) {
-//   try {
-//     const { error } = await supabase.from("streams").insert({
-//       tmdb_id: Number(tmdbId),
-//       media_type: mediaType,
-//       season: season ? Number(season) : null,
-//       episode: episode ? Number(episode) : null,
-//       year: Number(year),
-//       share_token: shareToken,
-//       files,
-//     });
+    if (!tmdbId || !mediaType || !title || !year || !ts || !token) {
+      logRequest(404, "missing params");
+      return NextResponse.json(
+        { success: false, error: "need token" },
+        { status: 404 },
+      );
+    }
 
-//     if (error) console.warn("[dbSave] error:", error);
-//   } catch (err: any) {
-//     console.warn("[dbSave] exception:", err.message);
-//   }
-// }
+    if (Date.now() - ts > 8000) {
+      logRequest(403, "token expired");
+      return NextResponse.json(
+        { success: false, error: "Invalid token" },
+        { status: 403 },
+      );
+    }
 
-// function parseFileSizeGB(sizeStr: string): number {
-//   if (!sizeStr) return 0;
-//   const match = sizeStr.match(/([\d.]+)\s*(GB|MB)/i);
-//   if (!match) return 0;
-//   const val = parseFloat(match[1]);
-//   return match[2].toUpperCase() === "GB" ? val : val / 1024;
-// }
+    if (!validateBackendToken(tmdbId, f_token, ts, token)) {
+      logRequest(403, "invalid token");
+      return NextResponse.json(
+        { success: false, error: "Invalid token" },
+        { status: 403 },
+      );
+    }
 
-// function selectBestFile(files: any[]) {
-//   const qualify = (f: any) =>
-//     parseFileSizeGB(f.file_size) <= MAX_FILE_SIZE_GB &&
-//     f.source !== "CAM" &&
-//     !f.file_name?.toUpperCase().includes("CAM");
+    const referer = req.headers.get("referer") || "";
+    if (!isValidReferer(referer)) {
+      logRequest(403, "invalid referrer");
+      return NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 },
+      );
+    }
 
-//   const sorted = [...files].sort(
-//     (a, b) => parseFileSizeGB(a.file_size) - parseFileSizeGB(b.file_size),
-//   );
+    const qs = new URLSearchParams({
+      tmdb: tmdbId,
+      type: mediaType,
+    });
 
-//   return (
-//     sorted.find((f) => qualify(f) && f.quality === "4K") ??
-//     sorted.find((f) => qualify(f) && f.quality === "1080p") ??
-//     sorted.find((f) => qualify(f)) ??
-//     files[0]
-//   );
-// }
+    if (mediaType === "tv") {
+      qs.set("season", season!);
+      qs.set("episode", episode!);
+    }
 
-// function buildResponse(playerData: any) {
-//   const streams: Record<string, string> = playerData.streams ?? {};
+    const res = await fetchWithTimeout(
+      `${STREAMDATA_URL}?${qs.toString()}`,
+      {},
+      8000,
+    );
+    const data = await res.json();
 
-//   const links = QUALITY_ORDER.filter((q) => streams[q]).map((q) => ({
-//     type: "hls" as const,
-//     link: streams[q],
-//     resolution: parseInt(q),
-//   }));
+    const streamUrls: string[] = data?.data?.stream_urls ?? [];
 
-//   const byLanguage: Record<string, any[]> =
-//     playerData.subtitles?.by_language ?? {};
-//   const subtitles = Object.values(byLanguage)
-//     .flat()
-//     .map((sub: any) => ({
-//       id: sub.sid,
-//       display: sub.language,
-//       file: sub.url,
-//     }));
+    if (data?.status_code !== "200" || !streamUrls.length) {
+      logRequest(404, "no streams found");
+      return NextResponse.json(
+        { success: false, error: "No streams found" },
+        { status: 404 },
+      );
+    }
 
-//   return NextResponse.json({ success: true, links, subtitles });
-// }
+    const proxyWorker = await getHealthyWorker(streamUrls[0]);
 
-// export async function OPTIONS(req: NextRequest) {
-//   return handleOptions(req);
-// }
+    if (!proxyWorker) {
+      logRequest(503, "all proxy workers unavailable");
+      return NextResponse.json(
+        { success: false, error: "No proxy workers available" },
+        { status: 503 },
+      );
+    }
 
-// export async function GET(req: NextRequest) {
-//   const { cors, isAllowed } = createCors(req);
+    const links = streamUrls.map((url, i) => ({
+      type: "hls" as const,
+      link: `${proxyWorker}/?url=${url}`,
+      resolution: streamUrls.length - i,
+    }));
 
-//   if (!isAllowed) {
-//     return cors(
-//       NextResponse.json(
-//         { success: false, error: "Forbidden" },
-//         { status: 403 },
-//       ),
-//     );
-//   }
-
-//   try {
-//     const { searchParams } = req.nextUrl;
-
-//     const tmdbId = searchParams.get("a");
-//     const mediaType = searchParams.get("b");
-//     const season = searchParams.get("c");
-//     const episode = searchParams.get("d");
-//     const title = searchParams.get("f");
-//     const year = searchParams.get("g");
-//     const imdbId = searchParams.get("imdb");
-//     const ts = Number(searchParams.get("gago"));
-//     const token = searchParams.get("putangnamo")!;
-//     const f_token = searchParams.get("f_token")!;
-
-//     if (!tmdbId || !mediaType || !title || !year || !ts || !token)
-//       return cors(
-//         NextResponse.json(
-//           { success: false, error: "need token" },
-//           { status: 404 },
-//         ),
-//       );
-
-//     if (Date.now() - ts > 8000)
-//       return cors(
-//         NextResponse.json(
-//           { success: false, error: "Invalid token" },
-//           { status: 403 },
-//         ),
-//       );
-
-//     if (!validateBackendToken(tmdbId, f_token, ts, token))
-//       return cors(
-//         NextResponse.json(
-//           { success: false, error: "Invalid token" },
-//           { status: 403 },
-//         ),
-//       );
-
-//     const referer = req.headers.get("referer") || "";
-//     if (!isValidReferer(referer)) {
-//       return cors(
-//         NextResponse.json(
-//           { success: false, error: "Forbidden" },
-//           { status: 403 },
-//         ),
-//       );
-//     }
-
-//     const cached = await dbGet(tmdbId, mediaType, season, episode);
-
-//     if (cached) {
-//       const { share_token: shareToken, files } = cached;
-//       const bestFile = selectBestFile(files);
-//       if (!bestFile)
-//         return cors(
-//           NextResponse.json(
-//             { success: false, error: "No files found" },
-//             { status: 404 },
-//           ),
-//         );
-
-//       const playerData = await fetchWithTimeout(
-//         `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
-//         {},
-//         8000,
-//       ).then((r) => r.json());
-
-//       return cors(buildResponse(playerData));
-//     }
-
-//     const qs = new URLSearchParams({
-//       secret: WORKER_SECRET,
-//       title,
-//       year,
-//       mediaType,
-//       ...(season && { season }),
-//       ...(episode && { episode }),
-//     });
-
-//     const data = await fetchWithTimeout(`${WORKER_URL}/?${qs}`, {}, 8000).then(
-//       (r) => r.json(),
-//     );
-
-//     if (!data.success)
-//       return cors(NextResponse.json(data, { status: 500 }));
-
-//     const { shareToken, files } = data;
-//     if (!files?.length)
-//       return cors(
-//         NextResponse.json(
-//           { success: false, error: "No files found" },
-//           { status: 404 },
-//         ),
-//       );
-
-//     const bestFile = selectBestFile(files);
-
-//     dbSave(tmdbId, mediaType, season, episode, year, shareToken, files).catch(
-//       (e: any) => console.warn("dbSave failed:", e.message),
-//     );
-
-//     const playerData = await fetchWithTimeout(
-//       `${FEBBOX_PLAYER_WORKER}/?fid=${bestFile.data_id}&share_key=${shareToken}`,
-//       {},
-//       8000,
-//     ).then((r) => r.json());
-
-//     return cors(buildResponse(playerData));
-//   } catch (err: any) {
-//     console.error("API Error:", err);
-//     return cors(
-//       NextResponse.json(
-//         { success: false, error: "Internal server error" },
-//         { status: 500 },
-//       ),
-//     );
-//   }
-// }
+    const subtitles = (data?.default_subs ?? []).map(
+      (sub: any, index: number) => ({
+        id: sub.sid ?? sub.id ?? index,
+        display:
+          sub.lang ?? sub.language ?? sub.display ?? sub.code ?? "Unknown",
+        language: sub.code ?? "",
+        file: sub.url ?? sub.file,
+      }),
+    );
+    logRequest(200, "OK!!!!!");
+    return NextResponse.json({ success: true, links, subtitles });
+  } catch (err: any) {
+    console.error("API Error:", err);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
 
 // // import { NextRequest, NextResponse } from "next/server";
 // // import { validateBackendToken } from "@/lib/validate-token";
@@ -449,162 +350,3 @@
 // //     );
 // //   }
 // // }
-import { NextRequest, NextResponse } from "next/server";
-import { validateBackendToken } from "@/lib/validate-token";
-import { isValidReferer } from "@/lib/allowed-referers";
-import { fetchWithTimeout } from "@/lib/fetch-timeout";
-import { FIELD_MAP } from "@/lib/token";
-
-const PROXY_WORKERS = [
-  // "https://proxy.jerometecson-main.workers.dev",
-  "https://berkas.test01-05a.workers.dev/",
-  "https://berkas.test02-663.workers.dev/",
-  "https://berkas.test03-4fb.workers.dev/",
-  "https://berkas.test04-cee.workers.dev/",
-];
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-async function getHealthyWorker(testUrl: string): Promise<string | null> {
-  const candidates = shuffle(PROXY_WORKERS);
-
-  for (const worker of candidates) {
-    try {
-      const testLink = `${worker}/?url=${testUrl}`;
-      const res = await fetchWithTimeout(testLink, { method: "HEAD" }, 3000);
-
-      if (res.ok) {
-        return worker;
-      }
-    } catch {}
-  }
-
-  return null;
-}
-
-const STREAMDATA_URL = "https://streamdata.vaplayer.ru/api.php";
-
-export async function GET(req: NextRequest) {
-  const logRequest = (status: number, reason: string) => {
-    const tmdbId = req.nextUrl.searchParams.get(FIELD_MAP.id);
-    const mediaType = req.nextUrl.searchParams.get("b");
-    const season = req.nextUrl.searchParams.get(FIELD_MAP.season);
-    const episode = req.nextUrl.searchParams.get(FIELD_MAP.episode);
-    const extra = mediaType === "tv" ? `/${season}/${episode}` : "";
-    console.log(
-      `[BERKAS] ${tmdbId}/${mediaType}${extra} | ${status} | ${reason}`,
-    );
-  };
-
-  try {
-    const tmdbId = req.nextUrl.searchParams.get("a");
-    const mediaType = req.nextUrl.searchParams.get("b");
-    const season = req.nextUrl.searchParams.get("c");
-    const episode = req.nextUrl.searchParams.get("d");
-    const title = req.nextUrl.searchParams.get("f");
-    const year = req.nextUrl.searchParams.get("g");
-    const imdbId = req.nextUrl.searchParams.get("imdb"); // optional
-    const ts = Number(req.nextUrl.searchParams.get("gago"));
-    const token = req.nextUrl.searchParams.get("putangnamo")!;
-    const f_token = req.nextUrl.searchParams.get("f_token")!;
-
-    if (!tmdbId || !mediaType || !title || !year || !ts || !token) {
-      logRequest(404, "missing params");
-      return NextResponse.json(
-        { success: false, error: "need token" },
-        { status: 404 },
-      );
-    }
-
-    if (Date.now() - ts > 8000) {
-      logRequest(403, "token expired");
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
-      );
-    }
-
-    if (!validateBackendToken(tmdbId, f_token, ts, token)) {
-      logRequest(403, "invalid token");
-      return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
-      );
-    }
-
-    const referer = req.headers.get("referer") || "";
-    if (!isValidReferer(referer)) {
-      logRequest(403, "invalid referrer");
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 },
-      );
-    }
-
-    const qs = new URLSearchParams({
-      tmdb: tmdbId,
-      type: mediaType,
-    });
-
-    if (mediaType === "tv") {
-      qs.set("season", season!);
-      qs.set("episode", episode!);
-    }
-
-    const res = await fetchWithTimeout(
-      `${STREAMDATA_URL}?${qs.toString()}`,
-      {},
-      8000,
-    );
-    const data = await res.json();
-
-    const streamUrls: string[] = data?.data?.stream_urls ?? [];
-
-    if (data?.status_code !== "200" || !streamUrls.length) {
-      logRequest(404, "no streams found");
-      return NextResponse.json(
-        { success: false, error: "No streams found" },
-        { status: 404 },
-      );
-    }
-
-    const proxyWorker = await getHealthyWorker(streamUrls[0]);
-
-    if (!proxyWorker) {
-      logRequest(503, "all proxy workers unavailable");
-      return NextResponse.json(
-        { success: false, error: "No proxy workers available" },
-        { status: 503 },
-      );
-    }
-
-    const links = streamUrls.map((url, i) => ({
-      type: "hls" as const,
-      link: `${proxyWorker}/?url=${url}`,
-      resolution: streamUrls.length - i,
-    }));
-
-    const subtitles = (data?.default_subs ?? []).map(
-      (sub: any, index: number) => ({
-        id: sub.sid ?? sub.id ?? index,
-        display:
-          sub.lang ?? sub.language ?? sub.display ?? sub.code ?? "Unknown",
-        language: sub.code ?? "",
-        file: sub.url ?? sub.file,
-      }),
-    );
-    logRequest(200, "OK!!!!!");
-    return NextResponse.json({ success: true, links, subtitles });
-  } catch (err: any) {
-    console.error("API Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 },
-    );
-  }
-}
