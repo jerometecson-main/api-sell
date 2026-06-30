@@ -4,6 +4,15 @@ import { isValidReferer } from "@/lib/allowed-referers";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 
 const PROXY_WORKERS = [
+"https://berkas.test09-635.workers.dev/",
+  "https://berkas.test010-f3d.workers.dev/",
+  "https://berkas.test011.workers.dev/",
+  "https://berkas.test012.workers.dev/",
+
+  "https://berkas.test05-187.workers.dev/",
+  "https://berkas.test06-c51.workers.dev/",
+  "https://berkas.test07-84f.workers.dev/",
+  "https://berkas.test08-0df.workers.dev/",
   // "https://proxy.jerometecson-main.workers.dev",
   "https://berkas.test01-05a.workers.dev/",
   "https://berkas.test02-663.workers.dev/",
